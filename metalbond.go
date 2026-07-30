@@ -6,10 +6,13 @@ package metalbond
 import (
 	"fmt"
 	"net"
+	"plugin"
 	"sync"
 
 	"github.com/ironcore-dev/metalbond/pb"
 	"github.com/sirupsen/logrus"
+
+	shared "github.com/cloudandheat/ironcore-dev-key-exchange/plugins/shared"
 )
 
 type MetalBond struct {
@@ -231,6 +234,15 @@ func (m *MetalBond) distributeRouteToPeers(action UpdateAction, vni VNI, dest De
 	// if this node is the origin of the route (fromPeer == nil):
 	if fromPeer == nil {
 		for _, sp := range m.peers {
+
+			m.log().Info("+++++++++++++++++++++++++++++++++++++++ start creating mls-group")
+			err := (*sp.pluginClient).CreateGroup("test-group", uint32(vni))
+			if err != nil {
+				m.log().WithField("peer", sp).Infof("++++++++++++++++++++++++++++++++++++ failed to create mls-group: %v", err)
+				return err
+			}
+			m.log().Info("+++++++++++++++++++++++++++++++++++++++ finished creating mls-group")
+
 			upd := msgUpdate{
 				Action:      action,
 				VNI:         vni,
@@ -238,7 +250,7 @@ func (m *MetalBond) distributeRouteToPeers(action UpdateAction, vni VNI, dest De
 				NextHop:     hop,
 			}
 
-			err := sp.SendUpdate(upd)
+			err = sp.SendUpdate(upd)
 			if err != nil {
 				m.log().WithField("peer", sp).Debugf("Could not send update to peer: %v", err)
 				return err
@@ -472,9 +484,33 @@ func (m *MetalBond) StartServer(listenAddress string) error {
 
 	m.log().Infof("Listening on %s", listenAddress)
 
+	// ======================================================================
+	// plugin
+	p, err := plugin.Open("/plugins/server.so")
+	if err != nil {
+		panic(err)
+	}
+
+	sym, err := p.Lookup("Plugin")
+	if err != nil {
+		panic(err)
+	}
+
+	m.log().Info("+++++++++++++++++++++++++++++++++++++++ init mls-server")
+	mls_server, ok := sym.(*shared.ServerPlugin)
+	if !ok {
+		panic("symbol 'Plugin' is not of type *shared.ServerPlugin")
+	}
+	m.log().Info("+++++++++++++++++++++++++++++++++++++++ start mls-server")
+	go (*mls_server).Start("[::]:4713")
+	m.log().Info("+++++++++++++++++++++++++++++++++++++++ mls-server started")
+	// ======================================================================
+
 	go func() {
 		for {
 			conn, err := lis.Accept()
+			m.log().Info("---------------------------------- got incoming connection")
+
 			if m.shuttingDown {
 				return
 			} else if err != nil {
@@ -491,7 +527,7 @@ func (m *MetalBond) StartServer(listenAddress string) error {
 				m,
 			)
 			m.mtxPeers.Lock()
-			m.log().Infof("New peer %s", conn.RemoteAddr().String())
+			m.log().Infof("---------------------------------------- New peer %s", conn.RemoteAddr().String())
 			m.peers[conn.RemoteAddr().String()] = p
 			m.mtxPeers.Unlock()
 		}

@@ -9,9 +9,11 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"plugin"
 	"sync"
 	"time"
 
+	shared "github.com/cloudandheat/ironcore-dev-key-exchange/plugins/shared"
 	"github.com/sirupsen/logrus"
 )
 
@@ -35,7 +37,8 @@ type metalBondPeer struct {
 	subscribedVNIs    map[VNI]bool
 	mtxSubscribedVNIs sync.RWMutex
 
-	metalbond *MetalBond
+	metalbond    *MetalBond
+	pluginClient *shared.ClientPlugin
 
 	keepaliveInterval uint32
 	keepaliveTimer    *time.Timer
@@ -70,6 +73,31 @@ func newMetalBondPeer(
 		subscribedVNIs:    make(map[VNI]bool),
 		keepaliveInterval: keepaliveInterval,
 		metalbond:         metalbond,
+		pluginClient:      nil,
+	}
+
+	if direction == OUTGOING {
+		// Dynamically load the compiled client plugin binary
+		p, err := plugin.Open("/plugins/client.so")
+		if err != nil {
+			panic("Failed to load client plugin: " + err.Error())
+		}
+		peer.log().Info("+++++++++++++++++++++++++++++++++++++++ start init mls-client")
+		peer.log().Info("+++++++++++++++++++++++++++++++++++++++ remote-addr: ", remoteAddr)
+		peer.log().Info("+++++++++++++++++++++++++++++++++++++++ local-ip: ", localIP)
+
+		sym, err := p.Lookup("Plugin")
+		if err != nil {
+			panic("Failed to lookup 'Plugin' symbol: " + err.Error())
+		}
+		client := sym.(*shared.ClientPlugin)
+		peer.pluginClient = client
+		serverAddress := "http://[::1]:4713"
+		peer.log().Info("+++++++++++++++++++++++++++++++++++++++ created mls-client to server: ", serverAddress)
+		(*peer.pluginClient).Init("test2", serverAddress)
+		peer.log().Info("+++++++++++++++++++++++++++++++++++++++ initialized mls-client")
+		go (*client).StartEventLoop()
+		peer.log().Info("+++++++++++++++++++++++++++++++++++++++ client-eventloop started")
 	}
 
 	go peer.handle()
@@ -90,7 +118,7 @@ func (p *metalBondPeer) GetState() ConnectionState {
 
 func (p *metalBondPeer) Subscribe(vni VNI) error {
 	p.log().Debugf("Subscribe to vni %d", vni)
-
+	p.log().Info("----------------------------------Subscribe to vni: ", vni)
 	if p.direction == INCOMING {
 		return fmt.Errorf("cannot subscribe on incoming connection")
 	}
@@ -102,7 +130,15 @@ func (p *metalBondPeer) Subscribe(vni VNI) error {
 		VNI: vni,
 	}
 
-	return p.sendMessage(msg)
+	if err := p.sendMessage(msg); err != nil {
+		return err
+	}
+
+	p.log().Info("+++++++++++++++++++++++++++++++++++++++ subscribe")
+	(*p.pluginClient).Subscribe(uint32(vni))
+	p.log().Info("+++++++++++++++++++++++++++++++++++++++ subscribe done")
+
+	return nil
 }
 
 func (p *metalBondPeer) Unsubscribe(vni VNI) error {

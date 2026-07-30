@@ -1,9 +1,10 @@
 module github.com/ironcore-dev/metalbond
 
-go 1.25.0
+go 1.25.1
 
 require (
 	github.com/alecthomas/kong v1.16.0
+	github.com/cloudandheat/ironcore-dev-key-exchange v0.0.1-test
 	github.com/google/addlicense v1.2.0
 	github.com/onsi/ginkgo/v2 v2.32.0
 	github.com/onsi/gomega v1.42.1
