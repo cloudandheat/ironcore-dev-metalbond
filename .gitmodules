@@ -1,0 +1,3 @@
+[submodule "ironcore-dev-key-exchange"]
+	path = ironcore-dev-key-exchange
+	url = https://github.com/cloudandheat/ironcore-dev-key-exchange.git

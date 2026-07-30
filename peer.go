@@ -9,9 +9,11 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"plugin"
 	"sync"
 	"time"
 
+	shared "github.com/cloudandheat/ironcore-dev-key-exchange/plugins/shared"
 	"github.com/sirupsen/logrus"
 )
 
@@ -35,7 +37,8 @@ type metalBondPeer struct {
 	subscribedVNIs    map[VNI]bool
 	mtxSubscribedVNIs sync.RWMutex
 
-	metalbond *MetalBond
+	metalbond    *MetalBond
+	pluginClient *shared.ClientPlugin
 
 	keepaliveInterval uint32
 	keepaliveTimer    *time.Timer
@@ -70,6 +73,25 @@ func newMetalBondPeer(
 		subscribedVNIs:    make(map[VNI]bool),
 		keepaliveInterval: keepaliveInterval,
 		metalbond:         metalbond,
+		pluginClient:      nil,
+	}
+
+	if direction == OUTGOING {
+		// Dynamically load the compiled client plugin binary
+		p, err := plugin.Open("/plugins/client.so")
+		if err != nil {
+			panic("Failed to load client plugin: " + err.Error())
+		}
+
+		sym, err := p.Lookup("Plugin")
+		if err != nil {
+			panic("Failed to lookup 'Plugin' symbol: " + err.Error())
+		}
+		client := sym.(*shared.ClientPlugin)
+		peer.pluginClient = client
+		// TODO: replace hard-coded values
+		serverAddress := "http://[::1]:4713"
+		(*peer.pluginClient).Init("test2", serverAddress)
 	}
 
 	go peer.handle()
@@ -102,7 +124,13 @@ func (p *metalBondPeer) Subscribe(vni VNI) error {
 		VNI: vni,
 	}
 
-	return p.sendMessage(msg)
+	if err := p.sendMessage(msg); err != nil {
+		return err
+	}
+
+	(*p.pluginClient).Subscribe(uint32(vni))
+
+	return nil
 }
 
 func (p *metalBondPeer) Unsubscribe(vni VNI) error {
@@ -138,6 +166,10 @@ func (p *metalBondPeer) SendUpdate(upd msgUpdate) error {
 		return err
 	}
 	return nil
+}
+
+func (p *metalBondPeer) CreateGroup(groupName string, vni VNI) error {
+	return (*p.pluginClient).CreateGroup(groupName, uint32(vni))
 }
 
 ///////////////////////////////////////////////////////////////////
