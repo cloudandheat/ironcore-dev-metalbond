@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	key_exchange_client "github.com/cloudandheat/ironcore-dev-key-exchange/pkg/client"
 	"github.com/sirupsen/logrus"
 )
 
@@ -35,7 +36,8 @@ type metalBondPeer struct {
 	subscribedVNIs    map[VNI]bool
 	mtxSubscribedVNIs sync.RWMutex
 
-	metalbond *MetalBond
+	metalbond    *MetalBond
+	pluginClient *key_exchange_client.ClientImpl
 
 	keepaliveInterval uint32
 	keepaliveTimer    *time.Timer
@@ -70,6 +72,16 @@ func newMetalBondPeer(
 		subscribedVNIs:    make(map[VNI]bool),
 		keepaliveInterval: keepaliveInterval,
 		metalbond:         metalbond,
+		pluginClient:      nil,
+	}
+
+	if direction == OUTGOING {
+		var client = key_exchange_client.NewClient()
+		serverAddress := "http://metalbond.default.svc.cluster.local:4713"
+
+		peer.pluginClient = client
+
+		(*peer.pluginClient).Init("test2", serverAddress)
 	}
 
 	go peer.handle()
@@ -102,7 +114,13 @@ func (p *metalBondPeer) Subscribe(vni VNI) error {
 		VNI: vni,
 	}
 
-	return p.sendMessage(msg)
+	if err := p.sendMessage(msg); err != nil {
+		return err
+	}
+
+	(*p.pluginClient).Subscribe(uint32(vni))
+
+	return nil
 }
 
 func (p *metalBondPeer) Unsubscribe(vni VNI) error {
@@ -138,6 +156,10 @@ func (p *metalBondPeer) SendUpdate(upd msgUpdate) error {
 		return err
 	}
 	return nil
+}
+
+func (p *metalBondPeer) CreateGroup(groupName string, vni VNI) error {
+	return (*p.pluginClient).CreateGroup(groupName, uint32(vni))
 }
 
 ///////////////////////////////////////////////////////////////////
