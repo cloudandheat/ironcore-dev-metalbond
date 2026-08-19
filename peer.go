@@ -9,6 +9,7 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -80,8 +81,12 @@ func newMetalBondPeer(
 		serverAddress := "http://metalbond.default.svc.cluster.local:4713"
 
 		peer.pluginClient = client
+		hostname, err := os.Hostname()
+		if err != nil {
+			fmt.Println("------------------------- Error:", err)
+		}
 
-		(*peer.pluginClient).Init("test2", serverAddress)
+		(*peer.pluginClient).Init(hostname, serverAddress)
 	}
 
 	go peer.handle()

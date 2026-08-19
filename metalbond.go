@@ -6,6 +6,7 @@ package metalbond
 import (
 	"fmt"
 	"net"
+	"strconv"
 	"sync"
 
 	"github.com/ironcore-dev/metalbond/pb"
@@ -187,7 +188,8 @@ func (m *MetalBond) AnnounceRoute(vni VNI, dest Destination, hop NextHop) error 
 	m.log().Infof("Announcing VNI %d: %s via %s", vni, dest, hop)
 
 	for _, p := range m.peers {
-		if err := p.CreateGroup("test-group", vni); err != nil {
+		var group_name = strconv.FormatUint(uint64(vni), 10)
+		if err := p.CreateGroup(group_name, vni); err != nil {
 			m.log().WithField("peer", p).Errorf("failed to create mls-group: %v", err)
 			return err
 		}
