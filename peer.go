@@ -81,7 +81,7 @@ func newMetalBondPeer(
 
 		peer.pluginClient = client
 
-		(*peer.pluginClient).Init("test2", serverAddress)
+		(*peer.pluginClient).Init(localIP, serverAddress)
 	}
 
 	go peer.handle()
