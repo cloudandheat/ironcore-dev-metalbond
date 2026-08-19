@@ -4,7 +4,7 @@ go 1.25.1
 
 require (
 	github.com/alecthomas/kong v1.16.0
-	github.com/cloudandheat/ironcore-dev-key-exchange v0.0.11-test
+	github.com/cloudandheat/ironcore-dev-key-exchange v0.0.15-test
 	github.com/google/addlicense v1.2.0
 	github.com/onsi/ginkgo/v2 v2.32.0
 	github.com/onsi/gomega v1.42.1
