@@ -4,6 +4,7 @@
 package metalbond
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -38,7 +39,7 @@ type metalBondPeer struct {
 	mtxSubscribedVNIs sync.RWMutex
 
 	metalbond    *MetalBond
-	pluginClient *key_exchange_client.ClientImpl
+	pluginClient *key_exchange_client.AgentClient
 
 	keepaliveInterval uint32
 	keepaliveTimer    *time.Timer
@@ -53,6 +54,38 @@ type metalBondPeer struct {
 	rxUnsubscribe chan msgUnsubscribe
 	rxUpdate      chan msgUpdate
 	wg            sync.WaitGroup
+}
+
+func getLocalIP() string {
+	// 1. Check if the PREFIX_ADDRESS environment variable is set
+	if prefixAddr := os.Getenv("PREFIX_ADDRESS"); prefixAddr != "" {
+		if prefixAddr == "random" {
+			return fmt.Sprintf("%d.%d.%d.%d",
+				rand.Intn(256),
+				rand.Intn(256),
+				rand.Intn(256),
+				rand.Intn(256),
+			)
+		}
+		return prefixAddr
+	}
+
+	// 2. Fall back to finding the loopback interface IP
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return "127.0.0.1"
+	}
+
+	for _, addr := range addrs {
+		// Notice the removal of "!" before ipnet.IP.IsLoopback()
+		if ipnet, ok := addr.(*net.IPNet); ok && ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String()
+			}
+		}
+	}
+
+	return "127.0.0.1"
 }
 
 func newMetalBondPeer(
@@ -77,16 +110,39 @@ func newMetalBondPeer(
 	}
 
 	if direction == OUTGOING {
-		var client = key_exchange_client.NewClient()
-		serverAddress := "http://metalbond.default.svc.cluster.local:4713"
-
-		peer.pluginClient = client
+		serverAddress := os.Getenv("MLS_SERVER_ADDRESS")
+		agentAddress := os.Getenv("KEY_AGENT_GRPC_ADDRESS")
+		ip := getLocalIP()
 		hostname, err := os.Hostname()
 		if err != nil {
-			fmt.Println("------------------------- Error:", err)
+			logrus.Fatalf("------------------------- Error: %s", err)
 		}
 
-		(*peer.pluginClient).Init(hostname, serverAddress)
+		logrus.Infof("[%s] serverAddress: %s", hostname, serverAddress)
+		logrus.Infof("[%s] agentAddress: %s", hostname, agentAddress)
+		logrus.Infof("[%s] ip: %s", hostname, ip)
+
+		agentClient, err := key_exchange_client.NewAgentClient(agentAddress)
+		if err != nil {
+			logrus.Fatalf("------------------------- Failed to create agent client: %v", err)
+		}
+
+		peer.pluginClient = agentClient
+
+		var initErr error
+		maxRetries := 10
+		for i := 0; i < maxRetries; i++ {
+			initErr = (*peer.pluginClient).Init(context.Background(), hostname, serverAddress, ip)
+			if initErr == nil {
+				break
+			}
+			logrus.Infof("[%s] Agent not ready yet, retrying in 2 seconds... (%d/%d)", hostname, i+1, maxRetries)
+			time.Sleep(2 * time.Second)
+		}
+
+		if initErr != nil {
+			logrus.Fatalf("Failed to init agent after retries: %v", initErr)
+		}
 	}
 
 	go peer.handle()
@@ -114,6 +170,7 @@ func (p *metalBondPeer) Subscribe(vni VNI) error {
 	if p.GetState() != ESTABLISHED {
 		return fmt.Errorf("connection not ESTABLISHED")
 	}
+	logrus.Infof("----------------  Subscribe for VNI %d", vni)
 
 	msg := msgSubscribe{
 		VNI: vni,
@@ -123,7 +180,10 @@ func (p *metalBondPeer) Subscribe(vni VNI) error {
 		return err
 	}
 
-	(*p.pluginClient).Subscribe(uint32(vni))
+	err := (*p.pluginClient).Subscribe(context.Background(), uint32(vni))
+	if err != nil {
+		logrus.Errorf("----------------  Subscribe failed for VNI %d: %v", vni, err)
+	}
 
 	return nil
 }
@@ -164,7 +224,7 @@ func (p *metalBondPeer) SendUpdate(upd msgUpdate) error {
 }
 
 func (p *metalBondPeer) CreateGroup(groupName string, vni VNI) error {
-	return (*p.pluginClient).CreateGroup(groupName, uint32(vni))
+	return nil
 }
 
 ///////////////////////////////////////////////////////////////////
