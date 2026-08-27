@@ -172,17 +172,24 @@ func (p *metalBondPeer) Subscribe(vni VNI) error {
 	}
 	logrus.Infof("----------------  Subscribe for VNI %d", vni)
 
+	err := (*p.pluginClient).Subscribe(context.Background(), uint32(vni))
+	if err != nil {
+		logrus.Errorf("----------------  Subscribe failed for VNI %d: %v", vni, err)
+	}
+	logrus.Infof("----------------  Check Key ready for VNI %d", vni)
+
+	_, err = (*p.pluginClient).IsKeyReady(context.Background(), uint32(vni), 42)
+	if err != nil {
+		logrus.Errorf("----------------  Check key ready failed for VNI %d: %v", vni, err)
+	}
+	logrus.Infof("----------------  Key ready check done for VNI %d", vni)
+
 	msg := msgSubscribe{
 		VNI: vni,
 	}
 
 	if err := p.sendMessage(msg); err != nil {
 		return err
-	}
-
-	err := (*p.pluginClient).Subscribe(context.Background(), uint32(vni))
-	if err != nil {
-		logrus.Errorf("----------------  Subscribe failed for VNI %d: %v", vni, err)
 	}
 
 	return nil
