@@ -110,7 +110,6 @@ func newMetalBondPeer(
 	}
 
 	if direction == OUTGOING {
-		serverAddress := os.Getenv("MLS_SERVER_ADDRESS")
 		agentAddress := os.Getenv("KEY_AGENT_GRPC_ADDRESS")
 		ip := getLocalIP()
 		hostname, err := os.Hostname()
@@ -118,7 +117,6 @@ func newMetalBondPeer(
 			logrus.Fatalf("------------------------- Error: %s", err)
 		}
 
-		logrus.Infof("[%s] serverAddress: %s", hostname, serverAddress)
 		logrus.Infof("[%s] agentAddress: %s", hostname, agentAddress)
 		logrus.Infof("[%s] ip: %s", hostname, ip)
 
@@ -132,7 +130,7 @@ func newMetalBondPeer(
 		var initErr error
 		maxRetries := 10
 		for i := 0; i < maxRetries; i++ {
-			initErr = (*peer.pluginClient).Init(context.Background(), hostname, serverAddress, ip)
+			initErr = (*peer.pluginClient).Init(context.Background(), hostname, ip)
 			if initErr == nil {
 				break
 			}
