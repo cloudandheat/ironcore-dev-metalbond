@@ -6,10 +6,13 @@ package metalbond
 import (
 	"fmt"
 	"net"
+	"strconv"
 	"sync"
 
 	"github.com/ironcore-dev/metalbond/pb"
 	"github.com/sirupsen/logrus"
+
+	key_exchange_server "github.com/cloudandheat/ironcore-dev-key-exchange/pkg/server"
 )
 
 type MetalBond struct {
@@ -184,6 +187,14 @@ func (m *MetalBond) IsRouteAnnounced(vni VNI, dest Destination, hop NextHop) boo
 func (m *MetalBond) AnnounceRoute(vni VNI, dest Destination, hop NextHop) error {
 	m.log().Infof("Announcing VNI %d: %s via %s", vni, dest, hop)
 
+	for _, p := range m.peers {
+		var group_name = strconv.FormatUint(uint64(vni), 10)
+		if err := p.CreateGroup(group_name, vni); err != nil {
+			m.log().WithField("peer", p).Errorf("failed to create mls-group: %v", err)
+			return err
+		}
+	}
+
 	if err := m.myAnnouncements.AddNextHop(vni, dest, hop, nil); err != nil {
 		return fmt.Errorf("cannot announce route: %v", err)
 	}
@@ -286,6 +297,7 @@ func (m *MetalBond) GetClient() Client {
 
 // This function re-adds routes, including announced and received ones
 func (m *MetalBond) AddRoutesForVni(vni VNI) error {
+
 	// re-add received routes for this VNI
 	for dest, hops := range m.routeTable.GetDestinationsByVNI(vni) {
 		for _, hop := range hops {
@@ -472,9 +484,17 @@ func (m *MetalBond) StartServer(listenAddress string) error {
 
 	m.log().Infof("Listening on %s", listenAddress)
 
+	// ======================================================================
+
+	var mls_server = key_exchange_server.NewServer()
+	go (*mls_server).Start("[::]:4713")
+
+	// ======================================================================
+
 	go func() {
 		for {
 			conn, err := lis.Accept()
+
 			if m.shuttingDown {
 				return
 			} else if err != nil {
@@ -491,7 +511,7 @@ func (m *MetalBond) StartServer(listenAddress string) error {
 				m,
 			)
 			m.mtxPeers.Lock()
-			m.log().Infof("New peer %s", conn.RemoteAddr().String())
+
 			m.peers[conn.RemoteAddr().String()] = p
 			m.mtxPeers.Unlock()
 		}
