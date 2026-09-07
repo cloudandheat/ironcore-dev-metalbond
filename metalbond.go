@@ -120,7 +120,7 @@ func (m *MetalBond) PeerState(addr string) (ConnectionState, error) {
 	}
 }
 
-func (m *MetalBond) Subscribe(vni VNI) error {
+func (m *MetalBond) Subscribe(vni VNI, enable_encryption bool) error {
 	m.mtxMySubscriptions.Lock()
 	defer m.mtxMySubscriptions.Unlock()
 
@@ -131,7 +131,7 @@ func (m *MetalBond) Subscribe(vni VNI) error {
 	m.mySubscriptions[vni] = true
 
 	for _, p := range m.peers {
-		if err := p.Subscribe(vni); err != nil {
+		if err := p.Subscribe(vni, enable_encryption); err != nil {
 			return fmt.Errorf("could not subscribe to vni %d: %v", vni, err)
 		}
 	}

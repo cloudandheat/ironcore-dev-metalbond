@@ -178,7 +178,7 @@ func (p *metalBondPeer) GetState() ConnectionState {
 	return state
 }
 
-func (p *metalBondPeer) Subscribe(vni VNI) error {
+func (p *metalBondPeer) Subscribe(vni VNI, enable_encryption bool) error {
 	p.log().Debugf("Subscribe to vni %d", vni)
 
 	if p.direction == INCOMING {
@@ -187,19 +187,26 @@ func (p *metalBondPeer) Subscribe(vni VNI) error {
 	if p.GetState() != ESTABLISHED {
 		return fmt.Errorf("connection not ESTABLISHED")
 	}
-	logrus.Infof("----------------  Subscribe for VNI %d", vni)
 
-	err := (*p.pluginClient).Subscribe(context.Background(), uint32(vni))
-	if err != nil {
-		logrus.Errorf("----------------  Subscribe failed for VNI %d: %v", vni, err)
-	}
-	logrus.Infof("----------------  Check Key ready for VNI %d", vni)
+	if enable_encryption {
+		logrus.Infof("----------------  Encryption enabled for VNI %d", vni)
 
-	_, err = (*p.pluginClient).IsKeyReady(context.Background(), uint32(vni), 42)
-	if err != nil {
-		logrus.Errorf("----------------  Check key ready failed for VNI %d: %v", vni, err)
+		logrus.Infof("----------------  Subscribe for VNI %d", vni)
+
+		err := (*p.pluginClient).Subscribe(context.Background(), uint32(vni))
+		if err != nil {
+			logrus.Errorf("----------------  Subscribe failed for VNI %d: %v", vni, err)
+		}
+		logrus.Infof("----------------  Check Key ready for VNI %d", vni)
+
+		_, err = (*p.pluginClient).IsKeyReady(context.Background(), uint32(vni), 42)
+		if err != nil {
+			logrus.Errorf("----------------  Check key ready failed for VNI %d: %v", vni, err)
+		}
+		logrus.Infof("----------------  Key ready check done for VNI %d", vni)
+	} else {
+		logrus.Infof("----------------  Encryption disabled for VNI %d", vni)
 	}
-	logrus.Infof("----------------  Key ready check done for VNI %d", vni)
 
 	msg := msgSubscribe{
 		VNI: vni,
@@ -265,7 +272,9 @@ func (p *metalBondPeer) setState(newState ConnectionState) {
 	if oldState != newState && newState == ESTABLISHED {
 		p.metalbond.mtxMySubscriptions.RLock()
 		for sub := range p.metalbond.mySubscriptions {
-			if err := p.Subscribe(sub); err != nil {
+			// enable_encryption is here set to "false", because this is executed on the metalnet-server
+			// and the server is not part of the group.
+			if err := p.Subscribe(sub, false); err != nil {
 				p.log().Errorf("Cannot subscribe: %v", err)
 			}
 		}

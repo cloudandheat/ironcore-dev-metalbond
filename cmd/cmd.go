@@ -32,16 +32,17 @@ var CLI struct {
 	} `cmd:"" help:"Run MetalBond Server"`
 
 	Client struct {
-		Server        []string `help:"Server address. You may define multiple servers."`
-		Subscribe     []uint32 `help:"Subscribe to VNIs"`
-		Announce      []string `help:"Announce Prefixes in VNIs (e.g. 23#10.0.23.0/24#2001:db8::1#[STD|LB|NAT]#[FROM#TO]"`
-		Verbose       bool     `help:"Enable debug logging" short:"v"`
-		InstallRoutes []string `help:"install routes via netlink. VNI to route table mapping (e.g. 23#100 installs routes of VNI 23 to route table 100)"`
-		Tun           string   `help:"ip6tnl tun device name"`
-		IPv4only      bool     `help:"Receive only IPv4 routes" name:"ipv4-only"`
-		Keepalive     uint32   `help:"Keepalive Interval"`
-		Http          string   `help:"HTTP Server listen address. e.g. [::]:4712"`
-		Cleanup       bool     `help:"Cleanup routes upon exit"`
+		Server           []string `help:"Server address. You may define multiple servers."`
+		Subscribe        []uint32 `help:"Subscribe to VNIs"`
+		Announce         []string `help:"Announce Prefixes in VNIs (e.g. 23#10.0.23.0/24#2001:db8::1#[STD|LB|NAT]#[FROM#TO]"`
+		Verbose          bool     `help:"Enable debug logging" short:"v"`
+		InstallRoutes    []string `help:"install routes via netlink. VNI to route table mapping (e.g. 23#100 installs routes of VNI 23 to route table 100)"`
+		Tun              string   `help:"ip6tnl tun device name"`
+		IPv4only         bool     `help:"Receive only IPv4 routes" name:"ipv4-only"`
+		Keepalive        uint32   `help:"Keepalive Interval"`
+		Http             string   `help:"HTTP Server listen address. e.g. [::]:4712"`
+		Cleanup          bool     `help:"Cleanup routes upon exit"`
+		EnableEncryption bool     `help:"Enable encryption for the network"`
 	} `cmd:"" help:"Run MetalBond Client"`
 }
 
@@ -150,7 +151,7 @@ func main() {
 		}
 
 		for _, subscription := range CLI.Client.Subscribe {
-			err := m.Subscribe(metalbond.VNI(subscription))
+			err := m.Subscribe(metalbond.VNI(subscription), CLI.Client.EnableEncryption)
 			if err != nil {
 				log.Fatalf("Subscription failed: %v", err)
 			}
