@@ -20,6 +20,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 COPY cmd cmd
 COPY html html
 COPY pb pb
+COPY key_exchange_client key_exchange_client
 COPY *.go ./
 
 COPY extras/arp_spoofer arp_spoofer

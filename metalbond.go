@@ -11,8 +11,6 @@ import (
 
 	"github.com/ironcore-dev/metalbond/pb"
 	"github.com/sirupsen/logrus"
-
-	key_exchange_server "github.com/cloudandheat/ironcore-dev-key-exchange/pkg/server"
 )
 
 type MetalBond struct {
@@ -483,13 +481,6 @@ func (m *MetalBond) StartServer(listenAddress string) error {
 	m.isServer = true
 
 	m.log().Infof("Listening on %s", listenAddress)
-
-	// ======================================================================
-
-	var mls_server = key_exchange_server.NewServer()
-	go (*mls_server).Start("[::]:4713")
-
-	// ======================================================================
 
 	go func() {
 		for {
