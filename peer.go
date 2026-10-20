@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	key_exchange_client "github.com/cloudandheat/ironcore-dev-key-exchange/pkg/client"
+	"github.com/ironcore-dev/metalbond/key_exchange_client"
 	"github.com/sirupsen/logrus"
 )
 
@@ -39,8 +39,8 @@ type metalBondPeer struct {
 	subscribedVNIs    map[VNI]bool
 	mtxSubscribedVNIs sync.RWMutex
 
-	metalbond    *MetalBond
-	pluginClient *key_exchange_client.AgentClient
+	metalbond         *MetalBond
+	keyExchangeClient *key_exchange_client.KeyExchangeClient
 
 	keepaliveInterval uint32
 	keepaliveTimer    *time.Timer
@@ -107,6 +107,39 @@ func getLocalPrefix() (string, error) {
 	return "", fmt.Errorf("no IPv6 address found on 'lo'")
 }
 
+func initKeyExchangeConnection(agentAddress string) *key_exchange_client.KeyExchangeClient {
+	prefix, err := getLocalPrefix()
+	hostname, err := os.Hostname()
+	if err != nil {
+		logrus.Fatalf("Error: %s", err)
+	}
+
+	logrus.Infof("[%s] agentAddress: %s", hostname, agentAddress)
+	logrus.Infof("[%s] ip: %s", hostname, prefix)
+
+	agentClient, err := key_exchange_client.NewKeyExchangeClient(agentAddress)
+	if err != nil {
+		logrus.Fatalf("Failed to create agent client: %v", err)
+	}
+
+	var initErr error
+	maxRetries := 10
+	for i := 0; i < maxRetries; i++ {
+		initErr = agentClient.Init(context.Background(), hostname, prefix)
+		if initErr == nil {
+			break
+		}
+		logrus.Infof("[%s] Agent not ready yet, retrying in 2 seconds... (%d/%d)", hostname, i+1, maxRetries)
+		time.Sleep(2 * time.Second)
+	}
+
+	if initErr != nil {
+		logrus.Fatalf("Failed to init agent after retries: %v", initErr)
+	}
+
+	return agentClient
+}
+
 func newMetalBondPeer(
 	pconn *net.Conn,
 	remoteAddr string,
@@ -125,40 +158,15 @@ func newMetalBondPeer(
 		subscribedVNIs:    make(map[VNI]bool),
 		keepaliveInterval: keepaliveInterval,
 		metalbond:         metalbond,
-		pluginClient:      nil,
+		keyExchangeClient: nil,
 	}
 
 	if direction == OUTGOING {
-		agentAddress := os.Getenv("KEY_AGENT_GRPC_ADDRESS")
-		prefix, err := getLocalPrefix()
-		hostname, err := os.Hostname()
-		if err != nil {
-			logrus.Fatalf("------------------------- Error: %s", err)
-		}
-
-		logrus.Infof("[%s] agentAddress: %s", hostname, agentAddress)
-		logrus.Infof("[%s] ip: %s", hostname, prefix)
-
-		agentClient, err := key_exchange_client.NewAgentClient(agentAddress)
-		if err != nil {
-			logrus.Fatalf("------------------------- Failed to create agent client: %v", err)
-		}
-
-		peer.pluginClient = agentClient
-
-		var initErr error
-		maxRetries := 10
-		for i := 0; i < maxRetries; i++ {
-			initErr = (*peer.pluginClient).Init(context.Background(), hostname, prefix)
-			if initErr == nil {
-				break
-			}
-			logrus.Infof("[%s] Agent not ready yet, retrying in 2 seconds... (%d/%d)", hostname, i+1, maxRetries)
-			time.Sleep(2 * time.Second)
-		}
-
-		if initErr != nil {
-			logrus.Fatalf("Failed to init agent after retries: %v", initErr)
+		if agentAddress, exists := os.LookupEnv("AGENT_GRPC_ADDRESS"); exists {
+			peer.keyExchangeClient = initKeyExchangeConnection(agentAddress)
+			logrus.Info("######################################################### key-exchange was initialized")
+		} else {
+			logrus.Info("AGENT_GRPC_ADDRESS is not set, so the key-exchange is not initialized")
 		}
 	}
 
@@ -188,18 +196,18 @@ func (p *metalBondPeer) Subscribe(vni VNI, enable_encryption bool) error {
 		return fmt.Errorf("connection not ESTABLISHED")
 	}
 
-	if enable_encryption {
+	if enable_encryption && p.keyExchangeClient != nil {
 		logrus.Infof("----------------  Encryption enabled for VNI %d", vni)
 
 		logrus.Infof("----------------  Subscribe for VNI %d", vni)
 
-		err := (*p.pluginClient).Subscribe(context.Background(), uint32(vni))
+		err := (*p.keyExchangeClient).Subscribe(context.Background(), uint32(vni))
 		if err != nil {
 			logrus.Errorf("----------------  Subscribe failed for VNI %d: %v", vni, err)
 		}
 		logrus.Infof("----------------  Check Key ready for VNI %d", vni)
 
-		_, err = (*p.pluginClient).IsKeyReady(context.Background(), uint32(vni), 42)
+		_, err = (*p.keyExchangeClient).IsKeyReady(context.Background(), uint32(vni), 42)
 		if err != nil {
 			logrus.Errorf("----------------  Check key ready failed for VNI %d: %v", vni, err)
 		}
